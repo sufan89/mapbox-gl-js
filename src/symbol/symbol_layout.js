@@ -412,8 +412,6 @@ function addSymbol(bucket: SymbolBucket,
     const numGlyphVertices = {};
     let numVerticalGlyphVertices = 0;
     const placedTextSymbolIndices = {};
-    let lineCount = 0;
-    let maxLineLength = 0;
     let key = murmur3('');
     const dynamicTextOffset = layer.layout.get('dynamic-text-offset').evaluate(feature, {}) * ONE_EM;
 
@@ -422,8 +420,6 @@ function addSymbol(bucket: SymbolBucket,
 
         if (!textCollisionFeature) {
             key = murmur3(shaping.text);
-            lineCount = shaping.lineCount;
-            maxLineLength = shaping.maxLineLength;
             const textRotate = layer.layout.get('text-rotate').evaluate(feature, {});
             // As a collision approximation, we can use either the vertical or any of the horizontal versions of the feature
             // We're counting on all versions having similar dimensions
@@ -510,8 +506,6 @@ function addSymbol(bucket: SymbolBucket,
         numVerticalGlyphVertices,
         numIconVertices,
         0,
-        lineCount,
-        maxLineLength,
         layoutTextSize,
         dynamicTextOffset);
 }

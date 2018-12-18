@@ -1,10 +1,7 @@
 // @flow
 
 import CollisionIndex from './collision_index';
-
 import EXTENT from '../data/extent';
-import ONE_EM from './one_em';
-
 import * as symbolSize from './symbol_size';
 import * as projection from './projection';
 import { getTextboxScale, getAnchorJustification } from './symbol_layout';
@@ -71,11 +68,12 @@ function shiftDynamicCollisionBox(collisionBox: SingleCollisionBox,
                                   shiftX: number, shiftY: number,
                                   offset: [number, number]) {
     const {x1, x2, y1, y2, anchorPointX, anchorPointY} = collisionBox;
+    // offset unit is ems, so we need to convert it to tile pixel units by mutilpying it by textBoxScale
     return {
-        x1: x1 + (shiftX + offset[0]) * textBoxScale,
-        y1: y1 + (shiftY + offset[1]) * textBoxScale,
-        x2: x2 + (shiftX + offset[0]) * textBoxScale,
-        y2: y2 + (shiftY + offset[1]) * textBoxScale,
+        x1: x1 + shiftX + offset[0] * textBoxScale,
+        y1: y1 + shiftY + offset[1] * textBoxScale,
+        x2: x2 + shiftX + offset[0] * textBoxScale,
+        y2: y2 + shiftY + offset[1] * textBoxScale,
         // symbol anchor point stays the same regardless of text-anchor
         anchorPointX,
         anchorPointY
@@ -265,8 +263,6 @@ export class Placement {
             scale: number, textPixelRatio: number, showCollisionBoxes: boolean, holdingForFade: boolean, seenCrossTileIDs: { [string | number]: boolean },
             collisionBoxArray: ?CollisionBoxArray) {
         const layout = bucket.layers[0].layout;
-        const lineHeight = layout.get('text-line-height') * ONE_EM;
-
         const partiallyEvaluatedTextSize = symbolSize.evaluateSizeForZoom(bucket.textSizeData, this.transform.zoom, symbolLayerProperties.layout.properties['text-size']);
         const textOptional = layout.get('text-optional');
         const iconOptional = layout.get('icon-optional');
@@ -326,8 +322,6 @@ export class Placement {
                     rightJustifiedTextSymbolIndex,
                     leftJustifiedTextSymbolIndex,
                     centerJustifiedTextSymbolIndex,
-                    maxLineLength,
-                    lineCount,
                     layoutTextSize,
                     dynamicTextOffset
                 } = symbolInstance;
@@ -343,6 +337,7 @@ export class Placement {
                             layout.get('text-allow-overlap'), textPixelRatio, posMatrix, collisionGroup.predicate);
                     placeText = placedGlyphBoxes.box.length > 0;
                 } else if (collisionArrays.textBox) {
+                    const textBox = collisionArrays.textBox;
                     const textBoxScale = getTextboxScale(bucket.tilePixelRatio, layoutTextSize);
                     const dynamicAnchors = layout.get('dynamic-text-anchor');
                     const anchors = dynamicAnchors[0] === "auto" ? AUTO_DYNAMIC_PLACEMENT : dynamicAnchors;
@@ -359,8 +354,8 @@ export class Placement {
                         if (justifiedPlacedSymbol < 0) continue;
 
                         const {horizontalAlign, verticalAlign} = getAnchorAlignment(anchor);
-                        const shiftX = -horizontalAlign * maxLineLength;
-                        const shiftY = -verticalAlign * lineCount * lineHeight;
+                        const shiftX = -horizontalAlign * (textBox.x2 - textBox.x1);
+                        const shiftY = -verticalAlign * (textBox.y2 - textBox. y1);
                         const offset = dynamicTextOffset ? getDynamicOffset(anchor, dynamicTextOffset) : [0, 0];
 
                         if (collisionArrays.textBox) {
@@ -370,8 +365,8 @@ export class Placement {
                             placeText = placedGlyphBoxes.box.length > 0;
 
                             if (placeText) {
-                                bucket.text.placedSymbolArray.get(justifiedPlacedSymbol).shiftX = shiftX + offset[0];
-                                bucket.text.placedSymbolArray.get(justifiedPlacedSymbol).shiftY = shiftY + offset[1];
+                                bucket.text.placedSymbolArray.get(justifiedPlacedSymbol).shiftX = shiftX / textBoxScale + offset[0];
+                                bucket.text.placedSymbolArray.get(justifiedPlacedSymbol).shiftY = shiftY / textBoxScale + offset[1];
                                 this.hideUnplacedJustifications(bucket, justification, symbolInstance);
                                 break;
                             }

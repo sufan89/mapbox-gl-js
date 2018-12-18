@@ -95,9 +95,6 @@ export const symbolInstance = createLayout([
     { type: 'Uint16', name: 'numVerticalGlyphVertices' },
     { type: 'Uint16', name: 'numIconVertices' },
     { type: 'Uint32', name: 'crossTileID' },
-    // used for computing dynamic text placement offsets for the different anchors at placement time
-    { type: 'Uint8', name: 'lineCount'},
-    { type: 'Float32', name: 'maxLineLength'},
     { type: 'Float32', name: 'layoutTextSize'},
     { type: 'Float32', name: 'dynamicTextOffset'}
 ]);

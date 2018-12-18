@@ -36,8 +36,6 @@ export type Shaping = {
     bottom: number,
     left: number,
     right: number,
-    lineCount: number,
-    maxLineLength: number,
     writingMode: 1 | 2
 };
 
@@ -198,8 +196,6 @@ function shapeText(text: Formatted,
         bottom: translate[1],
         left: translate[0],
         right: translate[0],
-        lineCount: lines.length,
-        maxLineLength: 0,
         writingMode
     };
 
@@ -501,7 +497,6 @@ function shapeLines(shaping: Shaping,
     shaping.bottom = shaping.top + height;
     shaping.left += -horizontalAlign * maxLineLength;
     shaping.right = shaping.left + maxLineLength;
-    shaping.maxLineLength = maxLineLength;
 }
 
 // justify right = 1, left = 0, center = 0.5
