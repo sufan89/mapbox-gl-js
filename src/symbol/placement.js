@@ -154,7 +154,8 @@ type DynamicTextOffsets = {
 
 function getDynamicOffset(anchor, radialOffset) {
     let x = 0, y = 0;
-    const hypotenuse = Math.sqrt(2 * Math.pow(radialOffset, 2));
+    // solve for r where r^2 + r^2 = radialOffset^2
+    const hypotenuse = radialOffset / Math.sqrt(2);
 
     switch (anchor) {
     case 'top-right':
