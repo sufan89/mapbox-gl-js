@@ -1,13 +1,12 @@
 // @flow
 
 import { extend, bindAll, warnOnce, uniqueId } from '../util/util';
-
 import browser from '../util/browser';
 import window from '../util/window';
 const { HTMLImageElement, HTMLElement } = window;
 import DOM from '../util/dom';
 import { getImage, getJSON, ResourceType } from '../util/ajax';
-import { normalizeStyleURL } from '../util/mapbox';
+import { RequestManager } from '../util/mapbox';
 import Style from '../style/style';
 import EvaluationParameters from '../style/evaluation_parameters';
 import Painter from '../render/painter';
@@ -26,11 +25,12 @@ import { Event, ErrorEvent } from '../util/evented';
 import { MapMouseEvent } from './events';
 import TaskQueue from '../util/task_queue';
 import webpSupported from '../util/webp_supported';
+import { setCacheLimits } from '../util/tile_request_cache';
 
 import type {PointLike} from '@mapbox/point-geometry';
+import type { RequestTransformFunction } from '../util/mapbox';
 import type {LngLatLike} from '../geo/lng_lat';
 import type {LngLatBoundsLike} from '../geo/lng_lat_bounds';
-import type {RequestParameters} from '../util/ajax';
 import type {StyleOptions, StyleSetterOptions} from '../style/style';
 import type {MapEvent, MapDataEvent} from './events';
 import type {CustomLayerInterface} from '../style/style_layer/custom_style_layer';
@@ -62,9 +62,6 @@ type IControl = {
     +getDefaultPosition?: () => ControlPosition;
 }
 /* eslint-enable no-use-before-define */
-
-type ResourceTypeEnum = $Keys<typeof ResourceType>;
-export type RequestTransformFunction = (url: string, resourceType?: ResourceTypeEnum) => RequestParameters;
 
 type MapOptions = {
     hash?: boolean,
@@ -206,7 +203,7 @@ const defaultOptions = {
  * @param {boolean} [options.renderWorldCopies=true]  If `true`, multiple copies of the world will be rendered, when zoomed out.
  * @param {number} [options.maxTileCacheSize=null]  The maximum number of tiles stored in the tile cache for a given source. If omitted, the cache will be dynamically sized based on the current viewport.
  * @param {string} [options.localIdeographFontFamily='sans-serif'] Defines a CSS
- *   font-family for locally overriding generation of glyphs in the 'CJK Unified Ideographs' and 'Hangul Syllables' ranges.
+ *   font-family for locally overriding generation of glyphs in the 'CJK Unified Ideographs', 'Hiragana', 'Katakana' and 'Hangul Syllables' ranges.
  *   In these ranges, font settings from the map's style will be ignored, except for font-weight keywords (light/regular/medium/bold).
  *   Set to `false`, to enable font settings from the map's style for these glyph ranges.
  *   The purpose of this option is to avoid bandwidth-intensive glyph server requests. (see [Use locally generated ideographs](https://www.mapbox.com/mapbox-gl-js/example/local-ideographs))
@@ -250,7 +247,6 @@ class Map extends Camera {
     _repaint: ?boolean;
     _vertices: ?boolean;
     _canvas: HTMLCanvasElement;
-    _transformRequest: RequestTransformFunction;
     _maxTileCacheSize: number;
     _frame: ?Cancelable;
     _styleDirty: ?boolean;
@@ -272,6 +268,7 @@ class Map extends Camera {
     _controls: Array<IControl>;
     _mapId: number;
     _localIdeographFontFamily: string;
+    _requestManager: RequestManager;
 
     /**
      * The map's {@link ScrollZoomHandler}, which implements zooming in and out with a scroll wheel or trackpad.
@@ -335,11 +332,7 @@ class Map extends Camera {
         this._renderTaskQueue = new TaskQueue();
         this._controls = [];
         this._mapId = uniqueId();
-
-        const transformRequestFn = options.transformRequest;
-        this._transformRequest = transformRequestFn ?
-            (url, type) => transformRequestFn(url, type) || ({ url }) :
-            (url) => ({ url });
+        this._requestManager = new RequestManager(options.transformRequest);
 
         if (typeof options.container === 'string') {
             this._container = window.document.getElementById(options.container);
@@ -958,7 +951,7 @@ class Map extends Camera {
      * @param {boolean} [options.diff=true] If false, force a 'full' update, removing the current style
      *   and building the given one instead of attempting a diff-based update.
      * @param {string} [options.localIdeographFontFamily='sans-serif'] Defines a CSS
-     *   font-family for locally overriding generation of glyphs in the 'CJK Unified Ideographs' and 'Hangul Syllables' ranges.
+     *   font-family for locally overriding generation of glyphs in the 'CJK Unified Ideographs', 'Hiragana', 'Katakana' and 'Hangul Syllables' ranges.
      *   In these ranges, font settings from the map's style will be ignored, except for font-weight keywords (light/regular/medium/bold).
      *   Set to `false`, to enable font settings from the map's style for these glyph ranges.
      *   Forces a full update.
@@ -1003,8 +996,8 @@ class Map extends Camera {
 
     _diffStyle(style: StyleSpecification | string,  options?: {diff?: boolean} & StyleOptions) {
         if (typeof style === 'string') {
-            const url = normalizeStyleURL(style);
-            const request = this._transformRequest(url, ResourceType.Style);
+            const url = this._requestManager.normalizeStyleURL(style);
+            const request = this._requestManager.transformRequest(url, ResourceType.Style);
             getJSON(request, (error: ?Error, json: ?Object) => {
                 if (error) {
                     this.fire(new ErrorEvent(error));
@@ -1256,7 +1249,7 @@ class Map extends Camera {
      * @see [Add an icon to the map](https://www.mapbox.com/mapbox-gl-js/example/add-image/)
      */
     loadImage(url: string, callback: Function) {
-        getImage(this._transformRequest(url, ResourceType.Image), callback);
+        getImage(this._requestManager.transformRequest(url, ResourceType.Image), callback);
     }
 
     /**
@@ -1930,6 +1923,11 @@ class Map extends Camera {
     // show vertices
     get vertices(): boolean { return !!this._vertices; }
     set vertices(value: boolean) { this._vertices = value; this._update(); }
+
+    // for cache browser tests
+    _setCacheLimits(limit: number, checkThreshold: number) {
+        setCacheLimits(limit, checkThreshold);
+    }
 }
 
 export default Map;

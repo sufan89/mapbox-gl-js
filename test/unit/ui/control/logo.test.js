@@ -1,4 +1,4 @@
-import { test } from 'mapbox-gl-js-test';
+import { test } from '../../../util/test';
 import { createMap as globalCreateMap } from '../../../util';
 import VectorTileSource from '../../../../src/source/vector_tile_source';
 
@@ -25,6 +25,7 @@ function createMap(t, logoPosition, logoRequired) {
 function createSource(options, logoRequired) {
     const source = new VectorTileSource('id', options, { send () {} });
     source.onAdd({
+        _requestManager: {_skuToken: '1234567890123'},
         transform: { angle: 0, pitch: 0, showCollisionBoxes: false },
         _getMapId: () => 1
     });
