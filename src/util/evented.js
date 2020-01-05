@@ -1,6 +1,6 @@
 // @flow
 
-import { extend } from './util';
+import {extend} from './util';
 
 type Listener = (Object) => any;
 type Listeners = { [string]: Array<Listener> };
@@ -31,10 +31,14 @@ export class Event {
     }
 }
 
-export class ErrorEvent extends Event {
-    error: Error;
+interface ErrorLike {
+    message: string;
+}
 
-    constructor(error: Error, data: Object = {}) {
+export class ErrorEvent extends Event {
+    error: ErrorLike;
+
+    constructor(error: ErrorLike, data: Object = {}) {
         super('error', extend({error}, data));
     }
 }
