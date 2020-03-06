@@ -135,6 +135,32 @@ The conventions for module exports are:
 
 * We use [rebase merging](https://git-scm.com/book/en/v2/Git-Branching-Rebasing) (as opposed to [basic merging](https://git-scm.com/book/en/v2/Git-Branching-Basic-Branching-and-Merging#Basic-Merging)) to merge branches
 
+Here is a recommended way to get setup:
+1. Fork this project
+2. Clone your new fork, `git clone git@github.com:GithubUser/mapbox-gl-js.git`
+3. `cd mapbox-gl-js`
+4. Add the Mapbox repository as an upstream repository: `git add remote upstream git@github.com:mapbox/mapbox-gl-js.git`
+5. Create a new branch `git checkout -b your-branch` for your contribution
+6. Write code, open a PR from your branch when you're ready
+7. If you need to rebase your fork's PR branch onto master to resolve conflicts: `git fetch upstream`, `git rebase upstream/master` and force push to Github `git push --force origin your-branch`
+
+## Changelog Conventions
+
+What warrants a changelog entry?
+
+- Any change that affects the public API, visual appearance or user security *must* have a changelog entry
+- Any performance improvement or bugfix *should* have a changelog entry
+- Any contribution from a community member *may* have a changelog entry, no matter how small
+- Any documentation related changes *should not* have a changelog entry
+- Any regression change introduced and fixed within the same release *should not* have a changelog entry
+- Any internal refactoring, technical debt reduction, render test, unit test or benchmark related change *should not* have a changelog entry
+
+How to add your changelog?
+
+- Any changelog entry should be descriptive and concise; it should explain the change to a reader without context
+- Any changelog entry should be added to the pull request in the following format: `<changelog>Changelog description</changelog>`
+- Any change that does not require a changelog should be labelled `skip changelog`
+
 ## Documentation Conventions
 
 See [`README.md`](https://github.com/mapbox/mapbox-gl-js-docs/blob/publisher-production/README.md) from [`mapbox-gl-js-docs`](https://github.com/mapbox/mapbox-gl-js-docs/).

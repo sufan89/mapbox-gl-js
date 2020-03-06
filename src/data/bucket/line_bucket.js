@@ -121,7 +121,7 @@ class LineBucket implements Bucket {
         const lineSortKey = this.layers[0].layout.get('line-sort-key');
         const bucketFeatures = [];
 
-        for (const {feature, index, sourceLayerIndex} of features) {
+        for (const {feature, id, index, sourceLayerIndex} of features) {
             if (!this.layers[0]._featureFilter(new EvaluationParameters(this.zoom), feature)) continue;
 
             const geometry = loadGeometry(feature);
@@ -130,7 +130,7 @@ class LineBucket implements Bucket {
                 undefined;
 
             const bucketFeature: BucketFeature = {
-                id: feature.id,
+                id,
                 properties: feature.properties,
                 type: feature.type,
                 sourceLayerIndex,
@@ -167,12 +167,12 @@ class LineBucket implements Bucket {
         }
     }
 
-    update(states: FeatureStates, vtLayer: VectorTileLayer, imagePositions: {[string]: ImagePosition}) {
+    update(states: FeatureStates, vtLayer: VectorTileLayer, imagePositions: {[_: string]: ImagePosition}) {
         if (!this.stateDependentLayers.length) return;
         this.programConfigurations.updatePaintArrays(states, vtLayer, this.stateDependentLayers, imagePositions);
     }
 
-    addFeatures(options: PopulateParameters, imagePositions: {[string]: ImagePosition}) {
+    addFeatures(options: PopulateParameters, imagePositions: {[_: string]: ImagePosition}) {
         for (const feature of this.patternFeatures) {
             this.addFeature(feature, feature.geometry, feature.index, imagePositions);
         }
@@ -203,7 +203,7 @@ class LineBucket implements Bucket {
         this.segments.destroy();
     }
 
-    addFeature(feature: BucketFeature, geometry: Array<Array<Point>>, index: number, imagePositions: {[string]: ImagePosition}) {
+    addFeature(feature: BucketFeature, geometry: Array<Array<Point>>, index: number, imagePositions: {[_: string]: ImagePosition}) {
         const layout = this.layers[0].layout;
         const join = layout.get('line-join').evaluate(feature, {});
         const cap = layout.get('line-cap');
@@ -215,7 +215,7 @@ class LineBucket implements Bucket {
         }
     }
 
-    addLine(vertices: Array<Point>, feature: BucketFeature, join: string, cap: string, miterLimit: number, roundLimit: number, index: number, imagePositions: {[string]: ImagePosition}) {
+    addLine(vertices: Array<Point>, feature: BucketFeature, join: string, cap: string, miterLimit: number, roundLimit: number, index: number, imagePositions: {[_: string]: ImagePosition}) {
         this.distance = 0;
         this.scaledDistance = 0;
         this.totalDistance = 0;
@@ -231,6 +231,7 @@ class LineBucket implements Bucket {
             for (let i = 0; i < vertices.length - 1; i++) {
                 this.totalDistance += vertices[i].dist(vertices[i + 1]);
             }
+            this.updateScaledDistance();
         }
 
         const isPolygon = vectorTileFeatureTypes[feature.type] === 'Polygon';
@@ -273,8 +274,8 @@ class LineBucket implements Bucket {
 
         for (let i = first; i < len; i++) {
 
-            nextVertex = isPolygon && i === len - 1 ?
-                vertices[first + 1] : // if the line is closed, we treat the last vertex like the first
+            nextVertex = i === len - 1 ?
+                (isPolygon ? vertices[first + 1] : (undefined: any)) : // if it's a polygon, treat the last vertex like the first
                 vertices[i + 1]; // just the next vertex
 
             // if two consecutive vertices exist, skip the current one
@@ -526,9 +527,7 @@ class LineBucket implements Bucket {
         }
     }
 
-    updateDistance(prev: Point, next: Point) {
-        this.distance += prev.dist(next);
-
+    updateScaledDistance() {
         // Knowing the ratio of the full linestring covered by this tiled feature, as well
         // as the total distance (in tile units) of this tiled feature, and the distance
         // (in tile units) of the current vertex, we can determine the relative distance
@@ -536,6 +535,11 @@ class LineBucket implements Bucket {
         this.scaledDistance = this.totalDistance > 0 ?
             (this.clipStart + (this.clipEnd - this.clipStart) * this.distance / this.totalDistance)  * (MAX_LINE_DISTANCE - 1) :
             this.distance;
+    }
+
+    updateDistance(prev: Point, next: Point) {
+        this.distance += prev.dist(next);
+        this.updateScaledDistance();
     }
 }
 

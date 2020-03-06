@@ -267,10 +267,11 @@ class Map extends Camera {
     _missingCSSCanary: HTMLElement;
     _canvasContainer: HTMLElement;
     _controlContainer: HTMLElement;
-    _controlPositions: {[string]: HTMLElement};
+    _controlPositions: {[_: string]: HTMLElement};
     _interactive: ?boolean;
     _showTileBoundaries: ?boolean;
     _showCollisionBoxes: ?boolean;
+    _showPadding: ?boolean;
     _showOverdrawInspector: boolean;
     _repaint: ?boolean;
     _vertices: ?boolean;
@@ -573,6 +574,7 @@ class Map extends Camera {
     /**
      * Returns the map's geographical bounds. When the bearing or pitch is non-zero, the visible region is not
      * an axis-aligned rectangle, and the result is the smallest bounds that encompasses the visible region.
+     * @returns {LngLatBounds} The geographical bounds of the map as {@link LngLatBounds}.
      * @example
      * var bounds = map.getBounds();
      */
@@ -582,6 +584,7 @@ class Map extends Camera {
 
     /**
      * Returns the maximum geographical bounds the map is constrained to, or `null` if none set.
+     * @returns The map object.
      * @example
      * var maxBounds = map.getMaxBounds();
      */
@@ -825,6 +828,7 @@ class Map extends Camera {
 
     /**
      * Returns true if the map is panning, zooming, rotating, or pitching due to a camera animation or user gesture.
+     * @returns {boolean} True if the map is moving.
      * @example
      * var isMoving = map.isMoving();
      */
@@ -837,6 +841,7 @@ class Map extends Camera {
 
     /**
      * Returns true if the map is zooming due to a camera animation or user gesture.
+     * @returns {boolean} True if the map is zooming.
      * @example
      * var isZooming = map.isZooming();
      */
@@ -847,12 +852,61 @@ class Map extends Camera {
 
     /**
      * Returns true if the map is rotating due to a camera animation or user gesture.
+     * @returns {boolean} True if the map is rotating.
      * @example
      * map.isRotating();
      */
     isRotating(): boolean {
         return this._rotating ||
             this.dragRotate.isActive();
+    }
+
+    _createDelegatedListener(type: MapEvent, layerId: any, listener: any) {
+        if (type === 'mouseenter' || type === 'mouseover') {
+            let mousein = false;
+            const mousemove = (e) => {
+                const features = this.getLayer(layerId) ? this.queryRenderedFeatures(e.point, {layers: [layerId]}) : [];
+                if (!features.length) {
+                    mousein = false;
+                } else if (!mousein) {
+                    mousein = true;
+                    listener.call(this, new MapMouseEvent(type, this, e.originalEvent, {features}));
+                }
+            };
+            const mouseout = () => {
+                mousein = false;
+            };
+            return {layer: layerId, listener, delegates: {mousemove, mouseout}};
+        } else if (type === 'mouseleave' || type === 'mouseout') {
+            let mousein = false;
+            const mousemove = (e) => {
+                const features = this.getLayer(layerId) ? this.queryRenderedFeatures(e.point, {layers: [layerId]}) : [];
+                if (features.length) {
+                    mousein = true;
+                } else if (mousein) {
+                    mousein = false;
+                    listener.call(this, new MapMouseEvent(type, this, e.originalEvent));
+                }
+            };
+            const mouseout = (e) => {
+                if (mousein) {
+                    mousein = false;
+                    listener.call(this, new MapMouseEvent(type, this, e.originalEvent));
+                }
+            };
+            return {layer: layerId, listener, delegates: {mousemove, mouseout}};
+        } else {
+            const delegate = (e) => {
+                const features = this.getLayer(layerId) ? this.queryRenderedFeatures(e.point, {layers: [layerId]}) : [];
+                if (features.length) {
+                    // Here we need to mutate the original event, so that preventDefault works as expected.
+                    e.features = features;
+                    listener.call(this, e);
+                    delete e.features;
+                }
+            };
+            return {layer: layerId, listener, delegates: {[type]: delegate}};
+        }
     }
 
     /**
@@ -889,53 +943,7 @@ class Map extends Camera {
             return super.on(type, layerId);
         }
 
-        const delegatedListener = (() => {
-            if (type === 'mouseenter' || type === 'mouseover') {
-                let mousein = false;
-                const mousemove = (e) => {
-                    const features = this.getLayer(layerId) ? this.queryRenderedFeatures(e.point, {layers: [layerId]}) : [];
-                    if (!features.length) {
-                        mousein = false;
-                    } else if (!mousein) {
-                        mousein = true;
-                        listener.call(this, new MapMouseEvent(type, this, e.originalEvent, {features}));
-                    }
-                };
-                const mouseout = () => {
-                    mousein = false;
-                };
-                return {layer: layerId, listener, delegates: {mousemove, mouseout}};
-            } else if (type === 'mouseleave' || type === 'mouseout') {
-                let mousein = false;
-                const mousemove = (e) => {
-                    const features = this.getLayer(layerId) ? this.queryRenderedFeatures(e.point, {layers: [layerId]}) : [];
-                    if (features.length) {
-                        mousein = true;
-                    } else if (mousein) {
-                        mousein = false;
-                        listener.call(this, new MapMouseEvent(type, this, e.originalEvent));
-                    }
-                };
-                const mouseout = (e) => {
-                    if (mousein) {
-                        mousein = false;
-                        listener.call(this, new MapMouseEvent(type, this, e.originalEvent));
-                    }
-                };
-                return {layer: layerId, listener, delegates: {mousemove, mouseout}};
-            } else {
-                const delegate = (e) => {
-                    const features = this.getLayer(layerId) ? this.queryRenderedFeatures(e.point, {layers: [layerId]}) : [];
-                    if (features.length) {
-                        // Here we need to mutate the original event, so that preventDefault works as expected.
-                        e.features = features;
-                        listener.call(this, e);
-                        delete e.features;
-                    }
-                };
-                return {layer: layerId, listener, delegates: {[type]: delegate}};
-            }
-        })();
+        const delegatedListener = this._createDelegatedListener(type, layerId, listener);
 
         this._delegatedListeners = this._delegatedListeners || {};
         this._delegatedListeners[type] = this._delegatedListeners[type] || [];
@@ -943,6 +951,51 @@ class Map extends Camera {
 
         for (const event in delegatedListener.delegates) {
             this.on((event: any), delegatedListener.delegates[event]);
+        }
+
+        return this;
+    }
+
+    /**
+     * Adds a listener that will be called only once to a specified event type.
+     *
+     * @method
+     * @name once
+     * @memberof Map
+     * @instance
+     * @param {string} type The event type to add a listener for.
+     * @param {Function} listener The function to be called when the event is fired.
+     *   The listener function is called with the data object passed to `fire`,
+     *   extended with `target` and `type` properties.
+     * @returns {Map} `this`
+     */
+
+    /**
+     * Adds a listener that will be called only once to a specified event type occurring on features in a specified style layer.
+     *
+     * @param {string} type The event type to listen for; one of `'mousedown'`, `'mouseup'`, `'click'`, `'dblclick'`,
+     * `'mousemove'`, `'mouseenter'`, `'mouseleave'`, `'mouseover'`, `'mouseout'`, `'contextmenu'`, `'touchstart'`,
+     * `'touchend'`, or `'touchcancel'`. `mouseenter` and `mouseover` events are triggered when the cursor enters
+     * a visible portion of the specified layer from outside that layer or outside the map canvas. `mouseleave`
+     * and `mouseout` events are triggered when the cursor leaves a visible portion of the specified layer, or leaves
+     * the map canvas.
+     * @param {string} layerId The ID of a style layer. Only events whose location is within a visible
+     * feature in this layer will trigger the listener. The event will have a `features` property containing
+     * an array of the matching features.
+     * @param {Function} listener The function to be called when the event is fired.
+     * @returns {Map} `this`
+     */
+
+    once(type: MapEvent, layerId: any, listener: any) {
+
+        if (listener === undefined) {
+            return super.once(type, layerId);
+        }
+
+        const delegatedListener = this._createDelegatedListener(type, layerId, listener);
+
+        for (const event in delegatedListener.delegates) {
+            this.once((event: any), delegatedListener.delegates[event]);
         }
 
         return this;
@@ -973,8 +1026,8 @@ class Map extends Camera {
             return super.off(type, layerId);
         }
 
-        if (this._delegatedListeners && this._delegatedListeners[type]) {
-            const listeners = this._delegatedListeners[type];
+        const removeDelegatedListener = (delegatedListeners) => {
+            const listeners = delegatedListeners[type];
             for (let i = 0; i < listeners.length; i++) {
                 const delegatedListener = listeners[i];
                 if (delegatedListener.layer === layerId && delegatedListener.listener === listener) {
@@ -985,6 +1038,10 @@ class Map extends Camera {
                     return this;
                 }
             }
+        };
+
+        if (this._delegatedListeners && this._delegatedListeners[type]) {
+            removeDelegatedListener(this._delegatedListeners);
         }
 
         return this;
@@ -1000,10 +1057,10 @@ class Map extends Camera {
      * Omitting this parameter (i.e. calling {@link Map#queryRenderedFeatures} with zero arguments,
      * or with only a `options` argument) is equivalent to passing a bounding box encompassing the entire
      * map viewport.
-     * @param {Object} [options]
+     * @param {Object} [options] Options object.
      * @param {Array<string>} [options.layers] An array of [style layer IDs](https://docs.mapbox.com/mapbox-gl-js/style-spec/#layer-id) for the query to inspect.
      *   Only features within these layers will be returned. If this parameter is undefined, all layers will be checked.
-     * @param {Array} [options.filter] A [filter](https://www.mapbox.com/mapbox-gl-js/style-spec/#other-filter)
+     * @param {Array} [options.filter] A [filter](https://docs.mapbox.com/mapbox-gl-js/style-spec/layers/#filter)
      *   to limit query results.
      * @param {boolean} [options.validate=true] Whether to check if the [options.filter] conforms to the Mapbox GL Style Specification. Disabling validation is a performance optimization that should only be used if you have previously validated the values you will be passing to this function.
      *
@@ -1109,10 +1166,10 @@ class Map extends Camera {
      * representing features within the specified vector tile or GeoJSON source that satisfy the query parameters.
      *
      * @param {string} sourceId The ID of the vector tile or GeoJSON source to query.
-     * @param {Object} [parameters]
+     * @param {Object} [parameters] Options object.
      * @param {string} [parameters.sourceLayer] The name of the [source layer](https://docs.mapbox.com/help/glossary/source-layer/)
      *   to query. *For vector tile sources, this parameter is required.* For GeoJSON sources, it is ignored.
-     * @param {Array} [parameters.filter] A [filter](https://www.mapbox.com/mapbox-gl-js/style-spec/#other-filter)
+     * @param {Array} [parameters.filter] A [filter](https://docs.mapbox.com/mapbox-gl-js/style-spec/layers/#filter)
      *   to limit query results.
      * @param {boolean} [parameters.validate=true] Whether to check if the [parameters.filter] conforms to the Mapbox GL Style Specification. Disabling validation is a performance optimization that should only be used if you have previously validated the values you will be passing to this function.
      *
@@ -1156,7 +1213,7 @@ class Map extends Camera {
      *
      * @param style A JSON object conforming to the schema described in the
      *   [Mapbox Style Specification](https://mapbox.com/mapbox-gl-style-spec/), or a URL to such JSON.
-     * @param {Object} [options]
+     * @param {Object} [options] Options object.
      * @param {boolean} [options.diff=true] If false, force a 'full' update, removing the current style
      *   and building the given one instead of attempting a diff-based update.
      * @param {string} [options.localIdeographFontFamily='sans-serif'] Defines a CSS
@@ -1401,6 +1458,7 @@ class Map extends Camera {
         return this.style.getSource(id);
     }
 
+    // eslint-disable-next-line jsdoc/require-returns
     /**
      * Add an image to the style. This image can be displayed on the map like any other icon in the style's
      * [sprite](https://docs.mapbox.com/help/glossary/sprite/) using the image's ID with
@@ -1413,7 +1471,7 @@ class Map extends Camera {
      * @param id The ID of the image.
      * @param image The image as an `HTMLImageElement`, `ImageData`, `ImageBitmap` or object with `width`, `height`, and `data`
      * properties with the same format as `ImageData`.
-     * @param options
+     * @param options Options object.
      * @param options.pixelRatio The ratio of pixels in the image to physical pixels on the screen
      * @param options.sdf Whether the image should be interpreted as an SDF image
      * @param options.content  `[x1, y1, x2, y2]`  If `icon-text-fit` is used in a layer with this image, this option defines the part of the image that can be covered by the content in `text-field`.
@@ -1480,6 +1538,7 @@ class Map extends Camera {
         }
     }
 
+    // eslint-disable-next-line jsdoc/require-returns
     /**
      * Update an existing image in a style. This image can be displayed on the map like any other icon in the style's
      * [sprite](https://docs.mapbox.com/help/glossary/sprite/) using the image's ID with
@@ -1528,7 +1587,7 @@ class Map extends Camera {
     /**
      * Check whether or not an image with a specific ID exists in the style. This checks both images
      * in the style's original [sprite](https://docs.mapbox.com/help/glossary/sprite/) and any images
-     * that have been added at runtime using {@link addImage}.
+     * that have been added at runtime using {@link Map#addImage}.
      *
      * @param id The ID of the image.
      *
@@ -1550,7 +1609,7 @@ class Map extends Camera {
     /**
      * Remove an image from a style. This can be an image from the style's original
      * [sprite](https://docs.mapbox.com/help/glossary/sprite/) or any images
-     * that have been added at runtime using {@link addImage}.
+     * that have been added at runtime using {@link Map#addImage}.
      *
      * @param id The ID of the image.
      *
@@ -1564,7 +1623,7 @@ class Map extends Camera {
     }
 
     /**
-     * Load an image from an external URL to be used with `Map#addImage`. External
+     * Load an image from an external URL to be used with {@link Map#addImage}. External
      * domains must support [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS).
      *
      * @param {string} url The URL of the image file. Image file must be in png, webp, or jpg format.
@@ -1587,7 +1646,7 @@ class Map extends Camera {
     /**
     * Returns an Array of strings containing the IDs of all images currently available in the map.
     * This includes both images from the style's original [sprite](https://docs.mapbox.com/help/glossary/sprite/)
-    * and any images that have been added at runtime using {@link addImage}.
+    * and any images that have been added at runtime using {@link Map#addImage}.
     *
     * @returns {Array<string>} An Array of strings containing the names of all sprites/images currently available in the map.
     *
@@ -1658,6 +1717,7 @@ class Map extends Camera {
         return this._update(true);
     }
 
+    // eslint-disable-next-line jsdoc/require-returns
     /**
      * Removes the layer with the given ID from the map's style.
      *
@@ -1722,8 +1782,8 @@ class Map extends Camera {
      *
      * @param {string} layerId The ID of the layer to which the filter will be applied.
      * @param {Array | null | undefined} filter The filter, conforming to the Mapbox Style Specification's
-     *   [filter definition](https://www.mapbox.com/mapbox-gl-js/style-spec/#other-filter).  If `null` or `undefined` is provided, the function removes any existing filter from the layer.
-     * @param {Object} [options]
+     *   [filter definition](https://docs.mapbox.com/mapbox-gl-js/style-spec/layers/#filter).  If `null` or `undefined` is provided, the function removes any existing filter from the layer.
+     * @param {Object} [options] Options object.
      * @param {boolean} [options.validate=true] Whether to check if the filter conforms to the Mapbox GL Style Specification. Disabling validation is a performance optimization that should only be used if you have previously validated the values you will be passing to this function.
      *
      * @returns {Map} `this`
@@ -1756,7 +1816,7 @@ class Map extends Camera {
      * @param {string} name The name of the paint property to set.
      * @param {*} value The value of the paint property to set.
      *   Must be of a type appropriate for the property, as defined in the [Mapbox Style Specification](https://www.mapbox.com/mapbox-gl-style-spec/).
-     * @param {Object} [options]
+     * @param {Object} [options] Options object.
      * @param {boolean} [options.validate=true] Whether to check if `value` conforms to the Mapbox GL Style Specification. Disabling validation is a performance optimization that should only be used if you have previously validated the values you will be passing to this function.
      * @returns {Map} `this`
      * @example
@@ -1787,7 +1847,7 @@ class Map extends Camera {
      * @param {string} layerId The ID of the layer to set the layout property in.
      * @param {string} name The name of the layout property to set.
      * @param {*} value The value of the layout property. Must be of a type appropriate for the property, as defined in the [Mapbox Style Specification](https://www.mapbox.com/mapbox-gl-style-spec/).
-     * @param {Object} [options]
+     * @param {Object} [options] Options object.
      * @param {boolean} [options.validate=true] Whether to check if `value` conforms to the Mapbox GL Style Specification. Disabling validation is a performance optimization that should only be used if you have previously validated the values you will be passing to this function.
      * @returns {Map} `this`
      * @example
@@ -1813,7 +1873,7 @@ class Map extends Camera {
      * Sets the any combination of light values.
      *
      * @param light Light properties to set. Must conform to the [Mapbox Style Specification](https://www.mapbox.com/mapbox-gl-style-spec/#light).
-     * @param {Object} [options]
+     * @param {Object} [options] Options object.
      * @param {boolean} [options.validate=true] Whether to check if the filter conforms to the Mapbox GL Style Specification. Disabling validation is a performance optimization that should only be used if you have previously validated the values you will be passing to this function.
      * @returns {Map} `this`
      */
@@ -1832,6 +1892,7 @@ class Map extends Camera {
         return this.style.getLight();
     }
 
+    // eslint-disable-next-line jsdoc/require-returns
     /**
      * Sets the state of a feature. The `state` object is merged in with the existing state of the feature.
      * Features are identified by their `id` attribute, which must be an integer or a string that can be
@@ -1849,12 +1910,14 @@ class Map extends Camera {
      * feature ids, set the `generateId` option in the `GeoJSONSourceSpecification` to auto-assign them. This
      * option assigns ids based on a feature's index in the source data. If you change feature data using
      * `map.getSource('some id').setData(..)`, you may need to re-apply state taking into account updated `id` values.
+     * @see [Create a hover effect](https://docs.mapbox.com/mapbox-gl-js/example/hover-styles/)
      */
     setFeatureState(feature: { source: string; sourceLayer?: string; id: string | number; }, state: Object) {
         this.style.setFeatureState(feature, state);
         return this._update();
     }
 
+    // eslint-disable-next-line jsdoc/require-returns
     /**
      * Removes feature state, setting it back to the default behavior. If only
      * source is specified, removes all states of that source. If
@@ -1967,7 +2030,6 @@ class Map extends Camera {
         }
 
         this._canvas = DOM.create('canvas', 'mapboxgl-canvas', canvasContainer);
-        this._canvas.style.position = 'absolute';
         this._canvas.addEventListener('webglcontextlost', this._contextLost, false);
         this._canvas.addEventListener('webglcontextrestored', this._contextRestored, false);
         this._canvas.setAttribute('tabindex', '0');
@@ -2147,8 +2209,9 @@ class Map extends Camera {
             rotating: this.isRotating(),
             zooming: this.isZooming(),
             moving: this.isMoving(),
+            fadeDuration: this._fadeDuration,
+            showPadding: this.showPadding,
             gpuTiming: !!this.listens('gpu-timing-layer'),
-            fadeDuration: this._fadeDuration
         });
 
         this.fire(new Event('render'));
@@ -2295,6 +2358,22 @@ class Map extends Camera {
     set showTileBoundaries(value: boolean) {
         if (this._showTileBoundaries === value) return;
         this._showTileBoundaries = value;
+        this._update();
+    }
+
+    /**
+     * Gets and sets a Boolean indicating whether the map will visualize
+     * the padding offsets.
+     *
+     * @name showPadding
+     * @type {boolean}
+     * @instance
+     * @memberof Map
+     */
+    get showPadding(): boolean { return !!this._showPadding; }
+    set showPadding(value: boolean) {
+        if (this._showPadding === value) return;
+        this._showPadding = value;
         this._update();
     }
 
