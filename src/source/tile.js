@@ -307,7 +307,7 @@ class Tile {
 
         for (let i = 0; i < layer.length; i++) {
             const feature = layer.feature(i);
-            if (filter(new EvaluationParameters(this.tileID.overscaledZ), feature)) {
+            if (filter.filter(new EvaluationParameters(this.tileID.overscaledZ), feature)) {
                 const id = featureIndex.getId(feature, sourceLayer);
                 const geojsonFeature = new GeoJSONFeature(feature, z, x, y, id);
                 (geojsonFeature: any).tile = coord;
@@ -404,8 +404,9 @@ class Tile {
             if (!sourceLayer || !sourceLayerStates || Object.keys(sourceLayerStates).length === 0) continue;
 
             bucket.update(sourceLayerStates, sourceLayer, this.imageAtlas && this.imageAtlas.patternPositions || {});
-            if (painter && painter.style) {
-                this.queryPadding = Math.max(this.queryPadding, painter.style.getLayer(id).queryRadius(bucket));
+            const layer = painter && painter.style && painter.style.getLayer(id);
+            if (layer && layer.paint) {
+                this.queryPadding = Math.max(this.queryPadding, layer.queryRadius(bucket));
             }
         }
     }
